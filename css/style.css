@@ -86,10 +86,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .panel.small .ghost-btn + .ghost-btn, .panel.small .cta + .ghost-btn { margin-top: 8px; }
 /* Title screen: menu beside the spinning preview */
 #startScreen { background: linear-gradient(90deg, rgba(3,3,10,0.82), rgba(3,3,10,0.35) 55%, rgba(3,3,10,0)); justify-items: start; padding-left: max(16px, 5vw); }
-#startScreen .panel { width: min(480px, 100%); }
+#startScreen .panel { width: min(480px, 100%); transition: width .25s ease; }
+#startScreen[data-mode=dodeca] .panel { width: min(640px, 100%); }
 @media (max-aspect-ratio: 11/10) {
   #startScreen { background: linear-gradient(0deg, rgba(3,3,10,0.85) 40%, rgba(3,3,10,0)); justify-items: center; align-items: end; padding-left: 16px; }
-  #startScreen .panel { max-height: 64vh; }
+  #startScreen .panel { width: min(560px, 100%); max-height: 70vh; }
+  #startScreen[data-mode=dodeca] .panel { width: min(720px, 100%); }
 }
 .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 10px; }
 .modes button {
