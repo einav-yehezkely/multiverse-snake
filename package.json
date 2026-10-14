@@ -1,0 +1,13 @@
+{
+  "name": "multiverse-snake",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Snake across the six worlds of a floating 3D cube.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check-site.mjs .",
+    "serve": "python3 -m http.server 8080"
+  },
+  "license": "MIT"
+}

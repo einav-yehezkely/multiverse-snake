@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Multiverse Snake</title>
+  <meta name="description" content="Snake across six worlds on a floating 3D cube. Portals, ghost mode, and a procedural synthwave soundtrack.">
+  <meta name="theme-color" content="#05040d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 4 58 18v28L32 60 6 46V18z' fill='%2312082b' stroke='%235cfcff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%23ff3df0'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/build/three.module.min.js",
+      "three/addons/": "./vendor/three/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <canvas id="scene" aria-label="Multiverse Snake game"></canvas>
+
+  <header class="hud" id="hud">
+    <div class="hud-block scores">
+      <div><span class="label">Score</span><span class="value" id="score">0</span></div>
+      <div><span class="label">Best</span><span class="value" id="best">0</span></div>
+    </div>
+    <div class="hud-block world">
+      <span class="label">World</span>
+      <span class="world-name" id="world"><i class="chip"></i><b>Neon City</b></span>
+      <div class="ghost-bar" id="ghostBar" hidden><span>GHOST</span><div class="track"><div class="fill" id="ghostFill"></div></div><em id="ghostSecs">6.0</em></div>
+    </div>
+    <div class="hud-block buttons">
+      <button id="pauseBtn" class="icon-btn" aria-label="Pause (P)" title="Pause (P / Space)">
+        <svg viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg>
+      </button>
+      <button id="muteBtn" class="icon-btn" aria-label="Mute (M)" title="Mute (M)">
+        <svg class="on" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="off" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="toast" id="toast"></div>
+
+  <section class="overlay" id="startScreen">
+    <div class="panel">
+      <h1><span>Multiverse</span> Snake</h1>
+      <p class="tag">Six worlds. One cube. Don't bite your own tail.</p>
+      <ul class="legend">
+        <li class="keys"><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>steer relative to the screen. Swipe on phones.</span></li>
+        <li><i class="ic crystal"></i><span>Energy crystals make you longer, and faster.</span></li>
+        <li><i class="ic portal"></i><span>Portals throw you to another world.</span></li>
+        <li><i class="ic ghost"></i><span>Ghost crystals let you pass through yourself for 6 seconds.</span></li>
+        <li><i class="ic edge"></i><span>Crawl over an edge to wrap onto the next face.</span></li>
+      </ul>
+      <button class="cta" id="playBtn">Play</button>
+      <p class="hint"><kbd>Enter</kbd> to start · <kbd>P</kbd> pause · <kbd>M</kbd> mute · Best <b id="startBest">0</b></p>
+    </div>
+  </section>
+
+  <section class="overlay" id="pauseScreen" hidden>
+    <div class="panel small">
+      <h2>Paused</h2>
+      <button class="cta" id="resumeBtn">Resume</button>
+      <button class="ghost-btn" id="restartBtn2">Restart</button>
+    </div>
+  </section>
+
+  <section class="overlay" id="overScreen" hidden>
+    <div class="panel small">
+      <h2 class="over-title">Run Over</h2>
+      <div class="new-best" id="newBest" hidden>New best!</div>
+      <div class="stats">
+        <div><span class="label">Score</span><b id="finalScore">0</b></div>
+        <div><span class="label">Best</span><b id="finalBest">0</b></div>
+        <div><span class="label">Length</span><b id="finalLen">0</b></div>
+        <div><span class="label">Worlds</span><b id="finalWorlds">1/6</b></div>
+      </div>
+      <button class="cta" id="restartBtn">Play again</button>
+      <p class="hint"><kbd>Enter</kbd> to restart</p>
+    </div>
+  </section>
+
+  <nav class="dpad" id="dpad" aria-label="Touch controls">
+    <button data-dir="up" aria-label="Up">▲</button>
+    <button data-dir="left" aria-label="Left">◀</button>
+    <button data-dir="right" aria-label="Right">▶</button>
+    <button data-dir="down" aria-label="Down">▼</button>
+  </nav>
+
+  <noscript><p class="noscript">Multiverse Snake needs JavaScript and WebGL.</p></noscript>
+  <div class="fatal" id="fatal" hidden></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
