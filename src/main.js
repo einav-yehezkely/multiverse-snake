@@ -210,6 +210,20 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden && game.status === 'running') togglePause();
 });
 
+// ---------- title-screen preview placement ----------
+/** Free area beside (landscape) or above (portrait) the menu panel, below the HUD. */
+function previewArea() {
+  if (ui.start.hidden) return null;
+  const W = window.innerWidth, H = window.innerHeight;
+  const panel = ui.start.querySelector('.panel').getBoundingClientRect();
+  const hudBottom = Math.max(...[...document.querySelectorAll('.hud-block')].map((e) => e.getBoundingClientRect().bottom));
+  let x0 = 0, x1 = W, y0 = hudBottom, y1 = H;
+  if (panel.right < W * 0.75) x0 = panel.right; // panel on the left
+  else y1 = panel.top; // panel along the bottom
+  const r = Math.max(60, Math.min(x1 - x0, y1 - y0) * 0.33);
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, r };
+}
+
 // ---------- loop ----------
 const SFX = { eat: 'eat', ghost: 'ghost', ghostEnd: 'ghostEnd', portal: 'portal', edge: 'edge', turn: 'turn', start: 'start', death: 'death' };
 let last = performance.now();
@@ -224,7 +238,11 @@ function frame(now) {
   }
   audio.intensity = Math.min(1, game.eaten / 20);
   updateHud();
-  renderer?.render(game, dt);
+  if (renderer) {
+    const pv = previewArea();
+    if (pv) renderer.preview = pv; // keep the last target while the preview animates away
+    renderer.render(game, dt);
+  }
   requestAnimationFrame(frame);
 }
 syncOverlays();

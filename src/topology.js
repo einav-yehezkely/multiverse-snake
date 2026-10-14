@@ -79,6 +79,7 @@ export const CUBE = {
   faceRadius: C.N / 2,
   viewFit: 19,
   segScale: 1,
+  boundRadius: (C.N / 2) * Math.sqrt(3), // centre → corner
 };
 
 /** Screen-relative direction → 3D vector for a camera basis {n, up}. */
@@ -260,6 +261,7 @@ export function buildDodecahedron(K = 4, edge = 7) {
     faceRadius: pentInradius,
     viewFit: 17.5,
     segScale: 0.85,
+    boundRadius: len(verts[0]),
   };
   return topo;
 }

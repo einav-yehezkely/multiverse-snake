@@ -78,6 +78,7 @@ export class Renderer {
     this.shake = 0;
     this.time = 0;
     this.attract = 1; // 1 = slowly orbiting title view, 0 = gameplay view
+    this.preview = null; // {cx, cy, r} in CSS px: where the title-screen preview should sit
 
     this.buildSpace();
     this.cube = new THREE.Group(); // everything that lives on the board
@@ -503,7 +504,13 @@ export class Renderer {
       THREE.MathUtils.clamp(headLocal.y, -this.topo.faceRadius, this.topo.faceRadius), 0,
     ).multiplyScalar(1 - this.attract);
     this.look.lerp(ahead, 1 - Math.exp(-dt * 2.2));
-    const dist = this.camDist * (1 + this.attract * 0.35);
+    // Title screen: fit the whole shape inside the free area next to the menu (see `preview`).
+    let dist = this.camDist * (1 + this.attract * 0.35);
+    const pv = this.preview;
+    if (pv && this.attract > 0.005) {
+      const fit = this.topo.boundRadius * (window.innerHeight / 2) / (Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * pv.r);
+      dist += (fit - dist) * this.attract;
+    }
     const camLocal = new THREE.Vector3(1.4 + this.look.x * 1.7, -2.2 + this.look.y * 1.7, dist);
     this.camera.position.copy(camLocal.applyQuaternion(q));
     this.camera.up.set(0, 1, 0).applyQuaternion(q);
@@ -515,11 +522,10 @@ export class Renderer {
     }
     this.camera.lookAt(lookW);
     this.camLight.position.copy(this.camera.position);
-    // On the title screen, shift the spinning preview beside the menu panel.
+    // On the title screen, centre the spinning preview in the free area beside the menu.
     const W = window.innerWidth, Hh = window.innerHeight;
-    if (this.attract > 0.005) {
-      const land = W > Hh * 1.1;
-      this.camera.setViewOffset(W, Hh, land ? -0.21 * W * this.attract : 0, land ? 0 : 0.2 * Hh * this.attract, W, Hh);
+    if (pv && this.attract > 0.005) {
+      this.camera.setViewOffset(W, Hh, (W / 2 - pv.cx) * this.attract, (Hh / 2 - pv.cy) * this.attract, W, Hh);
     } else if (this.camera.view?.enabled) this.camera.clearViewOffset();
 
     // Snake body
