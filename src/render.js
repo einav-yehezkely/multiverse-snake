@@ -5,6 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { N, FACES, normalOf, cross } from './cube.js';
+import { CRYSTAL_COUNT } from './game.js';
 import { THEMES, paintFace } from './themes.js';
 
 const H = 0.5; // doubled cube units → world units (cube spans ±N/2)
@@ -247,7 +248,7 @@ export class Renderer {
       this.cube.add(g);
       return g;
     };
-    this.crystal = mkCrystal('#7affd8', '#2dffc4');
+    this.crystalPool = Array.from({ length: CRYSTAL_COUNT }, () => mkCrystal('#7affd8', '#2dffc4'));
     this.ghostGem = mkCrystal('#f2e8ff', '#c08bff');
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.04, 8, 40), new THREE.MeshBasicMaterial({ color: '#d9b8ff' }));
     this.ghostGem.add(ring);
@@ -483,13 +484,17 @@ export class Renderer {
     this.headLight.color.set(over ? '#ff2b4a' : ghost ? '#c08bff' : '#7ff6ff');
 
     // Crystal
-    const bob = (g, p, lift) => {
-      this.orientOnFace(g, p, lift + Math.sin(t * 3) * 0.08);
-      g.userData.gem.rotation.z = 0; // keep upright in face space
-      g.userData.gem.rotation.set(Math.PI / 2, t * 2, 0);
+    const bob = (g, p, lift, ph = 0) => {
+      this.orientOnFace(g, p, lift + Math.sin(t * 3 + ph) * 0.08);
+      g.userData.gem.rotation.set(Math.PI / 2, t * 2 + ph, 0);
     };
-    if (game.crystal) { this.crystal.visible = true; bob(this.crystal, game.crystal, 0.55); this.crystal.userData.halo.material.opacity = 0.65 + 0.25 * Math.sin(t * 5); }
-    else this.crystal.visible = false;
+    this.crystalPool.forEach((g, k) => {
+      const p = game.crystals[k];
+      g.visible = !!p;
+      if (!p) return;
+      bob(g, p, 0.55, k * 1.7);
+      g.userData.halo.material.opacity = 0.65 + 0.25 * Math.sin(t * 5 + k * 1.7);
+    });
     if (game.ghostCrystal) {
       this.ghostGem.visible = true;
       bob(this.ghostGem, game.ghostCrystal.p, 0.6);

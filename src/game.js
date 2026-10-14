@@ -12,6 +12,7 @@ export const GHOST_MS = 6000;
 export const GHOST_CRYSTAL_MS = 11000;
 export const GHOST_EVERY = 4; // a ghost crystal appears after every 4th energy crystal
 export const START_LENGTH = 4;
+export const CRYSTAL_COUNT = 10; // energy crystals kept on the board at once
 export const PORTAL_SAFE_RUN = 3; // free cells required in front of a portal exit
 
 /** Screen-relative direction → 3D direction for a camera basis {n, up}. */
@@ -69,7 +70,8 @@ export class Game {
     this.newBest = false;
     this.events = [];
     this.tickCount = 0;
-    this.crystal = this.spawnCrystal();
+    this.crystals = [];
+    this.fillCrystals();
     this.placePortals();
   }
 
@@ -167,7 +169,8 @@ export class Game {
       }
     }
 
-    const willEat = this.crystal && eq(next, this.crystal);
+    const eatIdx = this.crystals.findIndex((c) => eq(c, next));
+    const willEat = eatIdx !== -1;
     const willGhost = this.ghostCrystal && eq(next, this.ghostCrystal.p);
     const growing = this.grow > 0 || willEat;
 
@@ -203,7 +206,8 @@ export class Game {
       this.grow += 1; // +2 total: the eating tick plus one more
       this.interval = Math.max(MIN_INTERVAL, START_INTERVAL - this.eaten * INTERVAL_STEP);
       this.events.push({ type: 'eat', at: next, score: this.score });
-      this.crystal = this.spawnCrystal();
+      this.crystals.splice(eatIdx, 1);
+      this.fillCrystals();
       if (this.eaten % GHOST_EVERY === 0 && !this.ghostCrystal && !this.ghost) {
         const p = this.spawnCrystal();
         if (p) { this.ghostCrystal = { p, ms: GHOST_CRYSTAL_MS }; this.events.push({ type: 'ghostCrystal', at: p }); }
@@ -215,6 +219,9 @@ export class Game {
       this.score += 25;
       this.events.push({ type: 'ghost', at: next, score: this.score });
     }
+
+    // Top up if an earlier refill ran short of room.
+    if (!willEat && this.crystals.length < CRYSTAL_COUNT) this.fillCrystals();
 
     // Recycle used portals once the snake has fully left both cells.
     if (this.portals && !this.portals.active) {
@@ -291,7 +298,7 @@ export class Game {
     const occ = this.occupied();
     const dist = this.surfaceDistances(this.head, occ);
     const reserved = new Set(occ);
-    if (this.crystal) reserved.add(key(this.crystal));
+    for (const c of this.crystals) reserved.add(key(c));
     if (this.ghostCrystal) reserved.add(key(this.ghostCrystal.p));
     const headFace = this.headFace.id;
     const ok = (p) => {
@@ -324,14 +331,19 @@ export class Game {
   }
 
   // ---------- crystals ----------
-  /** A random free cell reachable from the head (body treated as walls). */
+  /**
+   * A random free cell reachable from the head (body treated as walls), never on
+   * the snake, a portal or another crystal. Picks from the faces holding the
+   * fewest crystals so they stay spread across the cube. Returns null if full.
+   */
   spawnCrystal() {
     const occ = this.occupied();
     const dist = this.surfaceDistances(this.head, occ);
-    const reserved = new Set();
-    if (this.crystal) reserved.add(key(this.crystal));
+    const reserved = new Set(this.crystals.map(key));
     if (this.ghostCrystal) reserved.add(key(this.ghostCrystal.p));
     if (this.portals) { reserved.add(key(this.portals.a)); reserved.add(key(this.portals.b)); }
+    const perFace = [0, 0, 0, 0, 0, 0];
+    for (const c of this.crystals) perFace[faceOf(c).id]++;
     const free = [];
     for (const p of allCells()) {
       const k = key(p);
@@ -341,11 +353,18 @@ export class Game {
       free.push(p);
     }
     if (!free.length) return null;
-    // Favour the face the player is looking at, so the first crystals are easy to find.
-    const headFace = this.headFace.id;
-    const near = free.filter((p) => faceOf(p).id === headFace);
-    const pool = near.length && this.rng() < 0.45 ? near : free;
+    const least = Math.min(...free.map((p) => perFace[faceOf(p).id]));
+    const pool = free.filter((p) => perFace[faceOf(p).id] === least);
     return pool[Math.floor(this.rng() * pool.length)];
+  }
+
+  /** Spawn crystals until CRYSTAL_COUNT are on the board or no valid cell is left. */
+  fillCrystals() {
+    while (this.crystals.length < CRYSTAL_COUNT) {
+      const p = this.spawnCrystal();
+      if (!p) break;
+      this.crystals.push(p);
+    }
   }
 
   drainEvents() {

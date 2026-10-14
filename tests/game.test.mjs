@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  Game, screenToDir, BEST_KEY, START_LENGTH, START_INTERVAL, MIN_INTERVAL, GHOST_MS,
+  Game, screenToDir, BEST_KEY, START_LENGTH, START_INTERVAL, MIN_INTERVAL, GHOST_MS, CRYSTAL_COUNT,
 } from '../src/game.js';
 import {
   N, step, key, eq, neg, cross, cellToPoint, faceOf, normalOf, isValidCell, allCells, dot,
@@ -18,7 +18,8 @@ function memStorage(init = {}) {
 function newGame(opts = {}) {
   const g = new Game({ rng: rng(opts.seed ?? 7), storage: opts.storage ?? memStorage() });
   // Keep tests deterministic: no crystals / portals unless a test places them.
-  g.crystal = null; g.portals = null;
+  g.crystals = []; g.portals = null;
+  g.fillCrystals = () => {}; // and no automatic refills
   g.start();
   return g;
 }
@@ -128,7 +129,8 @@ test('body is continuous while wrapping across several faces', () => {
 
 test('eating grows by 2, scores, speeds up and respawns crystal', () => {
   const g = newGame();
-  g.crystal = step(g.head, g.dir).p;
+  g.crystals = [step(g.head, g.dir).p];
+  delete g.fillCrystals; // real refill behaviour
   const len = g.snake.length;
   g.tick();
   assert.equal(g.score, 10);
@@ -138,14 +140,14 @@ test('eating grows by 2, scores, speeds up and respawns crystal', () => {
   g.tick();
   assert.equal(g.snake.length, len + 2);
   assert.ok(g.interval < START_INTERVAL);
-  assert.ok(g.crystal, 'new crystal spawned');
-  assert.ok(!g.snake.some((p) => eq(p, g.crystal)));
+  assert.equal(g.crystals.length, CRYSTAL_COUNT, 'board topped back up');
+  assert.ok(!g.crystals.some((c) => g.snake.some((p) => eq(p, c))));
 });
 
 test('speed is capped', () => {
   const g = newGame();
   for (let k = 0; k < 200; k++) {
-    g.crystal = step(g.head, g.dir).p;
+    g.crystals = [step(g.head, g.dir).p];
     g.grow = 0;
     g.tick();
     if (g.status !== 'running') break;
@@ -228,11 +230,17 @@ test('crystal spawns on free reachable cells (many seeds)', () => {
   for (let seed = 1; seed < 60; seed++) {
     const g = new Game({ rng: rng(seed), storage: memStorage() });
     const occ = new Set(g.snake.map(key));
-    assert.ok(g.crystal && isValidCell(g.crystal));
-    assert.ok(!occ.has(key(g.crystal)));
-    if (g.portals) {
-      assert.ok(!eq(g.crystal, g.portals.a) && !eq(g.crystal, g.portals.b));
+    assert.equal(g.crystals.length, CRYSTAL_COUNT);
+    assert.equal(new Set(g.crystals.map(key)).size, CRYSTAL_COUNT, 'no stacked crystals');
+    for (const c of g.crystals) {
+      assert.ok(isValidCell(c));
+      assert.ok(!occ.has(key(c)));
+      if (g.portals) assert.ok(!eq(c, g.portals.a) && !eq(c, g.portals.b));
     }
+    // Spread: 10 crystals over 6 faces → every face has 1 or 2.
+    const per = [0, 0, 0, 0, 0, 0];
+    for (const c of g.crystals) per[faceOf(c).id]++;
+    assert.ok(per.every((n) => n >= 1 && n <= 2), `uneven spread ${per}`);
   }
 });
 
@@ -259,7 +267,7 @@ test('portals: placed on two different faces, free, away from the head', () => {
     assert.notEqual(faceOf(a).id, faceOf(b).id);
     const occ = new Set(g.snake.map(key));
     assert.ok(!occ.has(key(a)) && !occ.has(key(b)));
-    assert.ok(!eq(a, g.crystal) && !eq(b, g.crystal));
+    assert.ok(!g.crystals.some((c) => eq(c, a) || eq(c, b)));
     const dist = g.surfaceDistances(g.head, occ);
     assert.ok(dist.get(key(a)) >= 5 && dist.get(key(b)) >= 5);
   }
@@ -342,9 +350,53 @@ test('fuzz: random play never produces invalid or discontinuous state', () => {
         assert.equal(new Set(g.snake.map(key)).size, g.snake.length);
       }
       assertContinuous(g);
-      if (g.crystal) assert.ok(!g.snake.some((p) => eq(p, g.crystal)));
+      for (const c of g.crystals) assert.ok(!g.snake.some((p) => eq(p, c)) || g.ghost);
+      assert.equal(new Set(g.crystals.map(key)).size, g.crystals.length);
+      if (g.status === 'running') assert.equal(g.crystals.length, CRYSTAL_COUNT);
     }
   }
+});
+
+test('eating any of the crystals scores, grows, and is replaced immediately', () => {
+  const g = new Game({ rng: rng(3), storage: memStorage() });
+  g.start();
+  g.portals = null;
+  // Put one of the 10 crystals directly in front of the head.
+  const target = step(g.head, g.dir).p;
+  g.crystals = g.crystals.filter((c) => !eq(c, target));
+  g.crystals[4] = target;
+  const others = g.crystals.filter((c) => !eq(c, target)).map(key);
+  const len = g.snake.length;
+  g.tick();
+  assert.equal(g.score, 10);
+  assert.equal(g.snake.length, len + 1);
+  assert.equal(g.crystals.length, CRYSTAL_COUNT);
+  assert.ok(!g.crystals.some((c) => eq(c, target)), 'eaten crystal removed');
+  for (const k of others) assert.ok(g.crystals.some((c) => key(c) === k), 'other crystals untouched');
+  g.tick();
+  assert.equal(g.snake.length, len + 2);
+});
+
+test('when fewer than 10 cells are free, uses what is available without blocking', () => {
+  const g = new Game({ rng: rng(5), storage: memStorage() });
+  g.start();
+  g.portals = null;
+  g.ghostCrystal = null;
+  // Fill almost the whole cube with "body" so only 3 reachable cells remain.
+  const head = g.head;
+  const keep = [];
+  let p = head, d = g.dir;
+  for (let k = 0; k < 5; k++) { const s = step(p, d); p = s.p; d = s.d; keep.push(p); }
+  const keepKeys = new Set([key(head), ...keep.map(key)]);
+  g.snake = [head, ...allCells().filter((c) => !keepKeys.has(key(c)))];
+  g.links = g.snake.map(() => 'step');
+  g.crystals = [];
+  g.fillCrystals();
+  // keep[0] is adjacent to the head (distance 1) so it's skipped; 4 remain.
+  assert.equal(g.crystals.length, 4);
+  assert.equal(new Set(g.crystals.map(key)).size, 4);
+  for (const c of g.crystals) assert.ok(keep.some((q) => eq(q, c)));
+  assert.equal(g.spawnCrystal(), null);
 });
 
 test('update() advances at the configured tick rate', () => {

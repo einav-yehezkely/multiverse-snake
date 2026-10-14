@@ -19,7 +19,7 @@ Steering is always relative to the screen. "Up" means up on your display, even a
 ## Gameplay
 
 - **12 × 12 grid on every face** (864 cells in total). The snake moves at a fixed tick rate, and the tick gets shorter with each crystal you eat (165 ms down to 72 ms).
-- **Energy crystals** (green) give +10 points and make the snake 2 segments longer. They only spawn on free cells the snake can actually reach.
+- **Energy crystals** (green): there are always 10 on the board, spread evenly across the faces. Each gives +10 points and makes the snake 2 segments longer. Eat one and a replacement appears straight away on a random free cell the snake can reach. Crystals never appear inside the snake, on a portal or on top of another crystal. If fewer than 10 valid cells are free, the game uses the ones it has and keeps going.
 - **Portals** (an orange and blue pair, always on two different faces). Enter one and your head comes out of the other. The body follows over the next ticks, and the camera turns to the destination face. A portal won't send you out facing straight into your own body. If every exit direction is blocked, it acts like an ordinary cell. Once the whole snake has passed through, the pair moves to new spots.
 - **Ghost crystals** (white-violet) appear after every 4th energy crystal and fade after 11 s. Eating one gives +25 points and 6 s of ghost mode: you can pass through your own body. The body turns translucent and a countdown shows in the HUD. Both flash during the final 1.5 s.
 - **Worlds**: Neon City, Emerald Jungle, Void Nebula, Molten Core, Frost Peak and Dune Sea. Each has its own procedural texture, floating particles, colour and soundtrack key. The music changes key when you enter a new world.
@@ -72,7 +72,8 @@ The tests cover:
 - all 24 edge transitions, and looping right round the cube
 - body continuity across faces and through portals
 - growth, collisions, tail-chasing and reversal prevention
-- crystal reachability, and portal placement and safety
+- crystal count, spread, reachability and replacement, including a nearly full board
+- portal placement and safety
 - pause, restart, scoring and best-score persistence, including when storage throws
 - screen-relative controls after every kind of crossing
 - a random-play fuzz test
