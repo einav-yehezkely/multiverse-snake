@@ -111,7 +111,6 @@ function syncMode() {
     b.querySelector('.mode-best').textContent = `Best ${g.best}`;
   }
   ui.modeHelp.textContent = HELP[mode];
-  ui.start.dataset.mode = mode; // the panel widens for the longer dodecahedron help
 }
 for (const b of ui.modeBtns) b.addEventListener('click', () => setMode(b.dataset.mode));
 function toMenu() {
