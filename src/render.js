@@ -4,13 +4,13 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { N, FACES, normalOf, cross } from './cube.js';
+import { N, FACES, cross } from './cube.js';
 import { CRYSTAL_COUNT } from './game.js';
-import { THEMES, paintFace } from './themes.js';
+import { CUBE } from './topology.js';
+import { THEMES, paintFace, paintArt } from './themes.js';
 
-const H = 0.5; // doubled cube units → world units (cube spans ±N/2)
 const LIFT = 0.42; // segment centre height above the face
-const MAX_SEG = 6 * N * N;
+const MAX_SEG = 1000; // ≥ cells on any board
 
 const v3 = (p) => new THREE.Vector3(p[0], p[1], p[2]);
 const smooth = (x) => x * x * (3 - 2 * x);
@@ -61,8 +61,9 @@ function viewQuat(view) {
 }
 
 export class Renderer {
-  constructor(canvas) {
+  constructor(canvas, topology = CUBE) {
     this.canvas = canvas;
+    this.topo = topology;
     const r = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     r.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     r.toneMapping = THREE.NoToneMapping;
@@ -79,7 +80,9 @@ export class Renderer {
     this.attract = 1; // 1 = slowly orbiting title view, 0 = gameplay view
 
     this.buildSpace();
-    this.buildCube();
+    this.cube = new THREE.Group(); // everything that lives on the board
+    this.scene.add(this.cube);
+    this.buildBoard();
     this.buildSnake();
     this.buildItems();
     this.buildFx();
@@ -101,8 +104,24 @@ export class Renderer {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     // Keep the active face comfortably large whatever the aspect ratio.
-    const fitH = 19 / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
-    this.camDist = 6 + fitH / Math.min(1, this.camera.aspect * 1.02);
+    this.fitScale = 1 / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2))) / Math.min(1, this.camera.aspect * 1.02);
+  }
+
+  get camDist() { return this.topo.inradius + this.topo.viewFit * this.fitScale; }
+
+  /** Swap the board (cube ↔ dodecahedron). Snake/items/effects are reused. */
+  setTopology(topo) {
+    if (topo === this.topo) return;
+    this.topo = topo;
+    this.cube.remove(this.board);
+    this.board.traverse((o) => {
+      o.geometry?.dispose();
+      if (o.material) { o.material.map?.dispose(); o.material.dispose(); }
+    });
+    this.buildBoard();
+    for (const r of this.rings) { this.cube.remove(r.m); }
+    this.rings = [];
+    this.fx.items = [];
   }
 
   // ---------- scene construction ----------
@@ -145,11 +164,36 @@ export class Renderer {
     this.scene.add(this.camLight.target);
   }
 
-  buildCube() {
-    this.cube = new THREE.Group();
-    this.scene.add(this.cube);
-    this.faceMeshes = [];
-    const half = N * H;
+  buildBoard() {
+    this.board = new THREE.Group();
+    this.cube.add(this.board);
+    if (this.topo.id === 'cube') this.buildCubeFaces(); else this.buildPolyFaces();
+
+    // Ambient particles hovering above each world
+    this.ambient = [];
+    const dot = glowTexture();
+    const T = this.topo;
+    const ext = T.id === 'cube' ? N / 2 : T.faceRadius * 0.8;
+    for (let id = 0; id < T.faceCount; id++) {
+      const f = T.faceBasis(id);
+      const th = THEMES[T.themeOf(id)].particles;
+      const n = T.id === 'cube' ? 46 : 30;
+      const local = [];
+      const pos = new Float32Array(n * 3);
+      for (let k = 0; k < n; k++) local.push({ x: (Math.random() - 0.5) * 2 * ext, y: (Math.random() - 0.5) * 2 * ext, h: Math.random() * 3, ph: Math.random() * 6.28 });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const pts = new THREE.Points(g, new THREE.PointsMaterial({
+        size: th.size * 2.2, map: dot, color: th.color, transparent: true, opacity: 0.85,
+        depthWrite: false, blending: THREE.AdditiveBlending,
+      }));
+      this.board.add(pts);
+      this.ambient.push({ id, th, local, pts, ext, u: v3(f.u), v: v3(f.v), n: v3(f.n) });
+    }
+  }
+
+  buildCubeFaces() {
+    const half = N / 2;
     for (const f of FACES) {
       const cv = document.createElement('canvas');
       cv.width = cv.height = 768;
@@ -163,35 +207,75 @@ export class Renderer {
       const m = new THREE.Mesh(new THREE.PlaneGeometry(N, N), mat);
       m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(v3(f.u), v3(f.v), v3(f.n)));
       m.position.copy(v3(f.n).multiplyScalar(half));
-      this.cube.add(m);
-      this.faceMeshes.push(m);
+      this.board.add(m);
     }
     // Inner core so nothing shows through seams
-    this.cube.add(new THREE.Mesh(new THREE.BoxGeometry(N - 0.6, N - 0.6, N - 0.6), new THREE.MeshBasicMaterial({ color: '#000000' })));
-    const edges = new THREE.LineSegments(
+    this.board.add(new THREE.Mesh(new THREE.BoxGeometry(N - 0.6, N - 0.6, N - 0.6), new THREE.MeshBasicMaterial({ color: '#000000' })));
+    this.board.add(new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(N + 0.06, N + 0.06, N + 0.06)),
       new THREE.LineBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.7 }),
-    );
-    this.cube.add(edges);
+    ));
+  }
 
-    // Ambient particles hovering above each world
-    this.ambient = [];
-    const dot = glowTexture();
-    for (const f of FACES) {
-      const th = THEMES[f.id].particles;
-      const n = 46;
-      const local = [];
-      const pos = new Float32Array(n * 3);
-      for (let k = 0; k < n; k++) local.push({ x: (Math.random() - 0.5) * N, y: (Math.random() - 0.5) * N, h: Math.random() * 3, ph: Math.random() * 6.28 });
+  /** Pentagonal faces: world artwork clipped to the pentagon, with every cell outlined. */
+  buildPolyFaces() {
+    const T = this.topo;
+    const size = 1024;
+    const coreGeo = [];
+    const edgePts = [];
+    for (const f of T.faces) {
+      const th = THEMES[T.themeOf(f.id)];
+      const R = Math.hypot(...f.ring[0].map((x, k) => x - f.c[k]));
+      const loc = (p) => {
+        const d = [p[0] - f.c[0], p[1] - f.c[1], p[2] - f.c[2]];
+        const x = d[0] * f.u[0] + d[1] * f.u[1] + d[2] * f.u[2];
+        const y = d[0] * f.v[0] + d[1] * f.v[1] + d[2] * f.v[2];
+        return [x / (2 * R) + 0.5, y / (2 * R) + 0.5];
+      };
+      const px = (p) => { const [a, b] = loc(p); return [a * size, (1 - b) * size]; };
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = size;
+      const ctx = cv.getContext('2d');
+      const pent = () => { ctx.beginPath(); f.ring.forEach((p, k) => { const [x, y] = px(p); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); };
+      ctx.save(); pent(); ctx.clip();
+      paintArt(ctx, T.themeOf(f.id), size);
+      // Cells: outlines + centre dots show every valid position and path.
+      const cells = T.cellData.filter((c) => c.face === f.id);
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      for (const c of cells) c.corners.forEach((p, k) => { const [x, y] = px(p); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); if (k === 3) ctx.closePath(); });
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      for (const c of cells) { const [x, y] = px(c.center); ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); }
+      ctx.restore();
+      ctx.strokeStyle = th.color; ctx.globalAlpha = 0.8; ctx.lineWidth = 9; pent(); ctx.stroke(); ctx.globalAlpha = 1;
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      // Triangle fan
+      const pos = [], uv = [];
+      for (let k = 0; k < 5; k++) {
+        for (const p of [f.c, f.ring[k], f.ring[(k + 1) % 5]]) { pos.push(...p); uv.push(...loc(p)); }
+        const a = f.ring[k], b = f.ring[(k + 1) % 5];
+        edgePts.push(...a.map((x) => x * 1.004), ...b.map((x) => x * 1.004));
+        for (const p of [f.c, a, b]) coreGeo.push(...p.map((x) => x * 0.95));
+      }
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      const pts = new THREE.Points(g, new THREE.PointsMaterial({
-        size: th.size * 2.2, map: dot, color: th.color, transparent: true, opacity: 0.85,
-        depthWrite: false, blending: THREE.AdditiveBlending,
-      }));
-      this.cube.add(pts);
-      this.ambient.push({ f, th, local, pts, u: v3(f.u), v: v3(f.v), n: v3(f.n) });
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.computeVertexNormals();
+      const mat = new THREE.MeshStandardMaterial({
+        map: tex, emissiveMap: tex, emissive: '#ffffff', emissiveIntensity: 0.55, roughness: 0.75, metalness: 0.1,
+      });
+      this.board.add(new THREE.Mesh(g, mat));
     }
+    const core = new THREE.BufferGeometry();
+    core.setAttribute('position', new THREE.Float32BufferAttribute(coreGeo, 3));
+    this.board.add(new THREE.Mesh(core, new THREE.MeshBasicMaterial({ color: '#000000' })));
+    const eg = new THREE.BufferGeometry();
+    eg.setAttribute('position', new THREE.Float32BufferAttribute(edgePts, 3));
+    this.board.add(new THREE.LineSegments(eg, new THREE.LineBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.7 })));
   }
 
   buildSnake() {
@@ -281,6 +365,13 @@ export class Renderer {
       this.cube.add(g);
       return g;
     };
+    // Path hints: where the head can go next (shown on the dodecahedron).
+    this.hints = [0, 1, 2].map(() => {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, color: '#bff9ff', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending }));
+      sp.visible = false;
+      this.cube.add(sp);
+      return sp;
+    });
     this.portalA = mkPortal('#ff8a1f');
     this.portalB = mkPortal('#2fa8ff');
   }
@@ -304,37 +395,34 @@ export class Renderer {
   // ---------- helpers ----------
   /** World position of a cell centre lifted above its face. */
   cellWorld(p, lift = LIFT) {
-    const n = normalOf(p);
-    return new THREE.Vector3(p[0] * H + n[0] * lift, p[1] * H + n[1] * lift, p[2] * H + n[2] * lift);
+    const c = this.topo.center(p), n = this.topo.normal(p);
+    return new THREE.Vector3(c[0] + n[0] * lift, c[1] + n[1] * lift, c[2] + n[2] * lift);
   }
 
   orientOnFace(obj, p, lift) {
-    const n = normalOf(p);
     obj.position.copy(this.cellWorld(p, lift));
-    const f = FACES.find((x) => x.n[0] === n[0] && x.n[1] === n[1] && x.n[2] === n[2]);
+    const f = this.topo.faceBasis(this.topo.faceOf(p));
     obj.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(v3(f.u), v3(f.v), v3(f.n)));
   }
 
   /** Point along the move from cell a to cell b (param s∈[0,1]); returns {pos, nrm, scale}. */
   linkPoint(a, b, link, s, out) {
-    const nb = normalOf(b);
+    const nb = this.topo.normal(b);
     if (link === 'stay' || s >= 1) {
       out.pos.copy(this.cellWorld(b)); out.nrm.set(nb[0], nb[1], nb[2]); out.scale = 1; return out;
     }
     if (link === 'portal') {
       out.pos.copy(this.cellWorld(b)); out.nrm.set(nb[0], nb[1], nb[2]); out.scale = smooth(Math.min(1, s * 1.6)); return out;
     }
-    const na = normalOf(a);
+    const na = this.topo.normal(a);
     const A = this.cellWorld(a);
     const B = this.cellWorld(b);
     out.scale = 1;
     if (link === 'edge') {
-      // Pivot over the cube edge: a → edge corner → b.
-      const E = new THREE.Vector3(
-        (a[0] + nb[0]) * H + (na[0] + nb[0]) * LIFT,
-        (a[1] + nb[1]) * H + (na[1] + nb[1]) * LIFT,
-        (a[2] + nb[2]) * H + (na[2] + nb[2]) * LIFT,
-      );
+      // Pivot over the shared edge: a → lifted edge point → b (LIFT above both faces).
+      const m = this.topo.edgeMid(a, b);
+      const k = LIFT / (1 + na[0] * nb[0] + na[1] * nb[1] + na[2] * nb[2]);
+      const E = new THREE.Vector3(m[0] + (na[0] + nb[0]) * k, m[1] + (na[1] + nb[1]) * k, m[2] + (na[2] + nb[2]) * k);
       if (s < 0.5) { out.pos.lerpVectors(A, E, s * 2); out.nrm.set(na[0], na[1], na[2]); }
       else { out.pos.lerpVectors(E, B, s * 2 - 1); out.nrm.set(nb[0], nb[1], nb[2]); }
       return out;
@@ -356,7 +444,7 @@ export class Renderer {
   // ---------- effects ----------
   burst(p, color, count = 40, speed = 4, life = 0.8) {
     const at = this.cellWorld(p);
-    const n = v3(normalOf(p));
+    const n = v3(this.topo.normal(p));
     const c = new THREE.Color(color);
     for (let k = 0; k < count; k++) {
       const d = new THREE.Vector3().randomDirection().addScaledVector(n, 0.9).normalize().multiplyScalar(speed * (0.3 + Math.random()));
@@ -411,7 +499,8 @@ export class Renderer {
     // Look slightly ahead toward the head so the next face is visible near edges.
     const headLocal = this.headPos.clone().applyQuaternion(this.qCam.clone().invert());
     const ahead = new THREE.Vector3(
-      THREE.MathUtils.clamp(headLocal.x, -6, 6), THREE.MathUtils.clamp(headLocal.y, -6, 6), 0,
+      THREE.MathUtils.clamp(headLocal.x, -this.topo.faceRadius, this.topo.faceRadius),
+      THREE.MathUtils.clamp(headLocal.y, -this.topo.faceRadius, this.topo.faceRadius), 0,
     ).multiplyScalar(1 - this.attract);
     this.look.lerp(ahead, 1 - Math.exp(-dt * 2.2));
     const dist = this.camDist * (1 + this.attract * 0.35);
@@ -426,6 +515,12 @@ export class Renderer {
     }
     this.camera.lookAt(lookW);
     this.camLight.position.copy(this.camera.position);
+    // On the title screen, shift the spinning preview beside the menu panel.
+    const W = window.innerWidth, Hh = window.innerHeight;
+    if (this.attract > 0.005) {
+      const land = W > Hh * 1.1;
+      this.camera.setViewOffset(W, Hh, land ? -0.21 * W * this.attract : 0, land ? 0 : 0.2 * Hh * this.attract, W, Hh);
+    } else if (this.camera.view?.enabled) this.camera.clearViewOffset();
 
     // Snake body
     const tmp = { pos: new THREE.Vector3(), nrm: new THREE.Vector3(), scale: 1 };
@@ -442,7 +537,7 @@ export class Renderer {
     const cDead = new THREE.Color('#ff2b4a');
     for (let k = 0; k < len; k++) {
       const f = len > 1 ? k / (len - 1) : 0;
-      const radius = 0.4 - f * 0.12;
+      const radius = (0.4 - f * 0.12) * this.topo.segScale;
       col.copy(cHead).lerp(cTail, f);
       if (ghost) col.lerp(new THREE.Color('#e6dcff'), 0.55 + 0.25 * Math.sin(t * 12 + k * 0.5));
       if (over) col.lerp(cDead, 0.75);
@@ -473,11 +568,11 @@ export class Renderer {
     this.trail(game, 0, prog, tmp);
     this.headPos.copy(tmp.pos);
     this.head.position.copy(tmp.pos);
-    this.head.scale.setScalar(tmp.scale * (over ? 0.9 : 1));
+    this.head.scale.setScalar(tmp.scale * (over ? 0.9 : 1) * this.topo.segScale);
     const ahead2 = { pos: new THREE.Vector3(), nrm: new THREE.Vector3(), scale: 1 };
     this.trail(game, 0, Math.min(1, prog + 0.08), ahead2);
     let fwd = ahead2.pos.clone().sub(tmp.pos);
-    if (fwd.lengthSq() < 1e-6) fwd = v3(game.dir);
+    if (fwd.lengthSq() < 1e-6) fwd = v3(this.topo.dirVector(game.head, game.dir));
     this.head.up.copy(tmp.nrm);
     this.head.lookAt(this.head.position.clone().add(fwd));
     this.headMesh.material.emissive.set(over ? '#ff2b4a' : ghost ? '#b89cff' : '#3fe9ff');
@@ -520,23 +615,41 @@ export class Renderer {
       g.userData.ring.material.transparent = true;
     }
 
+    // Path hints
+    const showHints = this.topo.id !== 'cube' && game.status === 'running';
+    let hk = 0;
+    if (showHints) {
+      for (const d of this.topo.dirs(game.head)) {
+        if (this.topo.isReverse(game.head, d, game.dir)) continue;
+        const sp = this.hints[hk++];
+        const cell = this.topo.step(game.head, d).p;
+        sp.visible = true;
+        sp.position.copy(this.cellWorld(cell, 0.12));
+        const straight = this.topo.sameDir(d, game.dir);
+        sp.scale.setScalar(straight ? 0.75 : 0.6);
+        sp.material.opacity = (straight ? 0.55 : 0.4) + 0.15 * Math.sin(t * 6);
+      }
+    }
+    for (; hk < 3; hk++) this.hints[hk].visible = false;
+
     // Ambient particles
     for (const a of this.ambient) {
       const arr = a.pts.geometry.attributes.position.array;
-      const half = N * H;
+      const half = a.ext;
+      const inr = this.topo.inradius;
       a.local.forEach((p, k) => {
         p.h += a.th.rise * dt;
         p.x += Math.sin(t * 0.7 + p.ph) * a.th.drift * dt;
         p.y += Math.cos(t * 0.5 + p.ph * 1.3) * a.th.drift * dt;
         if (p.h > 3.2) p.h = 0;
         if (p.h < 0) p.h = 3.2;
-        if (p.x > half) p.x -= N; if (p.x < -half) p.x += N;
-        if (p.y > half) p.y -= N; if (p.y < -half) p.y += N;
-        const w = a.n.clone().multiplyScalar(half + 0.1 + p.h).addScaledVector(a.u, p.x).addScaledVector(a.v, p.y);
+        if (p.x > half) p.x -= 2 * half; if (p.x < -half) p.x += 2 * half;
+        if (p.y > half) p.y -= 2 * half; if (p.y < -half) p.y += 2 * half;
+        const w = a.n.clone().multiplyScalar(inr + 0.1 + p.h).addScaledVector(a.u, p.x).addScaledVector(a.v, p.y);
         arr[k * 3] = w.x; arr[k * 3 + 1] = w.y; arr[k * 3 + 2] = w.z;
       });
       a.pts.geometry.attributes.position.needsUpdate = true;
-      a.pts.material.opacity = 0.55 + 0.3 * Math.sin(t * 2 + a.f.id);
+      a.pts.material.opacity = 0.55 + 0.3 * Math.sin(t * 2 + a.id);
     }
 
     // FX particles

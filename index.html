@@ -46,16 +46,26 @@
   <section class="overlay" id="startScreen">
     <div class="panel">
       <h1><span>Multiverse</span> Snake</h1>
-      <p class="tag">Six worlds. One cube. Don't bite your own tail.</p>
+      <p class="tag">Many worlds. One snake. Don't bite your own tail.</p>
+      <div class="modes" role="group" aria-label="Board shape">
+        <button type="button" data-mode="cube" aria-pressed="true">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 4 35 12v16L20 36 5 28V12z M5 12l15 8 15-8 M20 20v16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>
+          <b>Cube</b><span>6 square worlds</span><em class="mode-best">Best 0</em>
+        </button>
+        <button type="button" data-mode="dodeca" aria-pressed="false">
+          <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3l16 11.6-6.1 18.8H10.1L4 14.6z M20 10l9.5 6.9-3.6 11.2H14.1l-3.6-11.2z M20 3v7 M36 14.6l-6.5 2.3 M29.9 33.4l-4-5.3 M10.1 33.4l4-5.3 M4 14.6l6.5 2.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          <b>Dodecahedron</b><span>12 pentagon worlds</span><em class="mode-best">Best 0</em>
+        </button>
+      </div>
+      <p class="mode-help" id="modeHelp"></p>
       <ul class="legend">
         <li class="keys"><span><kbd>←</kbd><kbd>↑</kbd><kbd>↓</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>steer relative to the screen. Swipe on phones.</span></li>
         <li><i class="ic crystal"></i><span>Energy crystals make you longer, and faster.</span></li>
         <li><i class="ic portal"></i><span>Portals throw you to another world.</span></li>
         <li><i class="ic ghost"></i><span>Ghost crystals let you pass through yourself for 6 seconds.</span></li>
-        <li><i class="ic edge"></i><span>Crawl over an edge to wrap onto the next face.</span></li>
       </ul>
       <button class="cta" id="playBtn">Play</button>
-      <p class="hint"><kbd>Enter</kbd> to start · <kbd>P</kbd> pause · <kbd>M</kbd> mute · Best <b id="startBest">0</b></p>
+      <p class="hint"><kbd>1</kbd>/<kbd>2</kbd> choose shape · <kbd>Enter</kbd> start · <kbd>P</kbd> pause · <kbd>M</kbd> mute<b id="startBest" hidden>0</b></p>
     </div>
   </section>
 
@@ -64,6 +74,7 @@
       <h2>Paused</h2>
       <button class="cta" id="resumeBtn">Resume</button>
       <button class="ghost-btn" id="restartBtn2">Restart</button>
+      <button class="ghost-btn" id="menuBtn2">Change shape</button>
     </div>
   </section>
 
@@ -78,6 +89,7 @@
         <div><span class="label">Worlds</span><b id="finalWorlds">1/6</b></div>
       </div>
       <button class="cta" id="restartBtn">Play again</button>
+      <button class="ghost-btn" id="menuBtn">Change shape</button>
       <p class="hint"><kbd>Enter</kbd> to restart</p>
     </div>
   </section>

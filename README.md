@@ -1,6 +1,11 @@
 # Multiverse Snake
 
-Snake played across the six faces of a floating 3D cube. Each face is a different world. When the snake crawls over an edge it wraps onto the next face and the camera swings round to follow. Its body can stretch across several worlds at once.
+Snake played across the faces of a floating 3D solid. Each face is a different world. When the snake crawls over an edge it wraps onto the next face and the camera swings round to follow. Its body can stretch across several worlds at once.
+
+You pick the board on the start screen, which shows a rotating 3D preview of each shape:
+
+- **Cube**: 6 square worlds, each a 12 × 12 grid.
+- **Dodecahedron**: 12 regular pentagon worlds (no rectangular faces). Each pentagon is split into five kite-shaped 4 × 4 grids, so every face has 80 cells.
 
 **Play it here:** https://einav-yehezkely.github.io/multiverse-snake/
 
@@ -13,10 +18,21 @@ Snake played across the six faces of a floating 3D cube. Each face is a differen
 | Pause / resume | P, Space, Esc, or the pause button | Pause button |
 | Mute | M or the speaker button | Speaker button |
 | Quick restart | R | – |
+| Choose shape (start screen) | 1 / 2, or ← / → | Tap Cube or Dodecahedron |
 
 Steering is always relative to the screen. "Up" means up on your display, even after the cube has turned.
 
 ## Gameplay
+
+The two modes share every rule: crystals, portals, ghost mode, growth, scoring, pause and restart. Each mode keeps its own best score.
+
+### Dodecahedron movement
+
+A square grid doesn't fit a pentagon, so each pentagon is cut into five kites: face centre → edge midpoint → corner → edge midpoint. Each kite is then divided into a 4 × 4 grid of four-sided cells. The whole surface ends up as one mesh of four-sided cells (960 in total), so every cell has exactly four exits and "straight", "left", "right" and "no reversing" work everywhere, including across face edges.
+
+- **Going straight** follows the glowing grid lines. A straight path crosses a pentagon from one edge to a non-neighbouring edge, bending about 36° at the seam between two kites.
+- **Steering** is relative to the screen. An arrow (or swipe) turns the snake toward that direction, choosing between straight, left and right. Faint glowing dots on the board show the cells you can move to next.
+- The camera rotates about each shared edge as the snake crosses it, so "up" on screen stays consistent from one face to the next.
 
 - **12 × 12 grid on every face** (864 cells in total). The snake moves at a fixed tick rate, and the tick gets shorter with each crystal you eat (165 ms down to 72 ms).
 - **Energy crystals** (green): there are always 10 on the board, spread evenly across the faces. Each gives +10 points and makes the snake 2 segments longer. Eat one and a replacement appears straight away on a random free cell the snake can reach. Crystals never appear inside the snake, on a portal or on top of another crystal. If fewer than 10 valid cells are free, the game uses the ones it has and keeps going.
@@ -28,8 +44,9 @@ Steering is always relative to the screen. "Up" means up on your display, even a
 ## How it works
 
 ```
-src/cube.js    cube surface maths (pure)
-src/game.js    game rules and state (pure, no DOM)
+src/cube.js      cube surface maths (pure)
+src/topology.js  board interface: cube adapter + dodecahedron quad mesh (pure)
+src/game.js      game rules and state for any topology (pure, no DOM)
 src/themes.js  world palettes and procedural face textures
 src/render.js  Three.js scene, camera, effects
 src/audio.js   Web Audio synth music and sound effects
@@ -43,6 +60,8 @@ P' = P + d − n      n' = d      d' = −n
 ```
 
 Here `n` is the face normal and `d` is the direction of travel. That one rule handles all 24 directed edges with no special cases. The camera is stored as a basis `{n, up}`. When the snake crosses an edge, `up` is rotated by the same 90° rotation that carries the old face onto the new one. That's why the controls stay screen-relative after a crossing.
+
+The dodecahedron is built in code from its 20 corners. Neighbouring cells are found by matching shared corner points rather than by hand-written edge tables, and each move is `exit through edge d → enter the neighbour through edge e → straight on is (e + 2) mod 4`.
 
 Three.js r160 (MIT) is included in `vendor/`, so the site makes no CDN requests at runtime. There is no build step, and every path is relative, so the site works at any GitHub Pages project URL.
 
@@ -62,7 +81,7 @@ Any static server works, e.g. `npx serve .`.
 The tests use Node's built-in test runner and need Node 18 or newer. There are no dependencies.
 
 ```bash
-npm test                       # unit tests for cube maths + game rules
+npm test                       # unit tests: cube maths, dodecahedron mesh, game rules
 node scripts/check-site.mjs .  # verify all asset/module paths are relative and exist
 ```
 
@@ -77,6 +96,7 @@ The tests cover:
 - pause, restart, scoring and best-score persistence, including when storage throws
 - screen-relative controls after every kind of crossing
 - a random-play fuzz test
+- dodecahedron: 12 regular pentagons, 20 corners and 30 edges; 960 four-sided cells, each with symmetric adjacency, and a closed surface (V − E + F = 2); every move is reversible; every one of the 30 edges can be crossed; heading stays continuous across face edges; screen-relative controls checked on every cell and direction; portals, collision, food, best scores kept per mode, and a random-play fuzz test
 
 ## Deployment
 
@@ -87,3 +107,4 @@ On every push to `main`, `.github/workflows/deploy.yml` runs the tests, assemble
 - It needs a browser with WebGL. Without WebGL you get a message instead of the game.
 - Bloom post-processing runs at full resolution. Very old or low-power GPUs may get a lower frame rate. The game logic still runs at the correct speed.
 - The face themes are visual only: every world follows the same movement rules.
+- On the dodecahedron, holding a direction doesn't trace a perfectly straight line on screen. Straight paths bend gently at kite seams, so you'll sometimes need a small correction.

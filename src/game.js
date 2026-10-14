@@ -1,10 +1,7 @@
 // Pure game state + rules. No DOM, no Three.js – fully unit-testable.
-import {
-  N, FACES, add, neg, cross, eq, key, step, normalOf, faceOf, faceDirs,
-  allCells, cellToPoint, rotateFaceToFace,
-} from './cube.js';
+import { CUBE, screenVector } from './topology.js';
 
-export const BEST_KEY = 'multiverse-snake-best';
+export const BEST_KEY = CUBE.bestKey; // cube best score key (kept from v1)
 export const START_INTERVAL = 165; // ms per tick
 export const MIN_INTERVAL = 72;
 export const INTERVAL_STEP = 5;
@@ -16,47 +13,37 @@ export const CRYSTAL_COUNT = 10; // energy crystals kept on the board at once
 export const PORTAL_SAFE_RUN = 3; // free cells required in front of a portal exit
 
 /** Screen-relative direction → 3D direction for a camera basis {n, up}. */
-export function screenToDir(view, screenDir) {
-  const right = cross(view.up, view.n);
-  switch (screenDir) {
-    case 'up': return view.up.slice();
-    case 'down': return neg(view.up);
-    case 'right': return right;
-    case 'left': return neg(right);
-  }
-  throw new Error('bad screen dir ' + screenDir);
-}
+export const screenToDir = screenVector;
 
-function safeStorage(storage) {
+function safeStorage(storage, bestKey) {
   return {
     get() {
-      try { return Number(storage?.getItem(BEST_KEY)) || 0; } catch { return 0; }
+      try { return Number(storage?.getItem(bestKey)) || 0; } catch { return 0; }
     },
     set(v) {
-      try { storage?.setItem(BEST_KEY, String(v)); } catch { /* storage unavailable */ }
+      try { storage?.setItem(bestKey, String(v)); } catch { /* storage unavailable */ }
     },
   };
 }
 
 export class Game {
-  constructor({ rng = Math.random, storage = null } = {}) {
+  constructor({ rng = Math.random, storage = null, topology = CUBE } = {}) {
     this.rng = rng;
-    this.store = safeStorage(storage);
+    this.topo = topology;
+    this.store = safeStorage(storage, topology.bestKey);
     this.best = this.store.get();
     this.reset();
   }
 
   reset() {
-    const f = FACES[0];
-    const j = Math.floor(N / 2);
-    // Head in the middle of the front face, body trailing to the left, moving right.
-    this.snake = [];
-    for (let k = 0; k < START_LENGTH; k++) this.snake.push(cellToPoint(f.id, 5 - k, j));
-    this.dir = f.u.slice();
-    this.view = { n: f.n.slice(), up: f.v.slice() };
+    // Head on face 0, body trailing behind, moving screen-right.
+    const s0 = this.topo.start();
+    this.snake = s0.snake.slice(0, START_LENGTH);
+    this.tailFrom = s0.snake[START_LENGTH];
+    this.dir = s0.dir;
+    this.view = s0.view;
     // links[k]: how segment k got to its cell from snake[k+1] (or from `tailFrom` for the last).
     this.links = this.snake.map(() => 'step');
-    this.tailFrom = add(this.snake[this.snake.length - 1], neg(add(f.u, f.u)));
     this.turns = [];
     this.grow = 0;
     this.score = 0;
@@ -94,14 +81,14 @@ export class Game {
   }
 
   get head() { return this.snake[0]; }
-  get headFace() { return faceOf(this.head); }
+  get headFace() { return this.topo.faceOf(this.head); }
   get ghost() { return this.ghostMs > 0; }
   get progress() { return Math.min(1, this.acc / this.interval); }
 
   occupied(excludeTail = false) {
     const s = new Set();
     const len = excludeTail ? this.snake.length - 1 : this.snake.length;
-    for (let k = 0; k < len; k++) s.add(key(this.snake[k]));
+    for (let k = 0; k < len; k++) s.add(this.topo.key(this.snake[k]));
     return s;
   }
 
@@ -131,24 +118,22 @@ export class Game {
     this.tickCount++;
 
     // Resolve buffered turns against the current camera basis.
+    const T = this.topo;
     while (this.turns.length) {
-      const d = screenToDir(this.view, this.turns.shift());
-      if (eq(d, this.dir) || eq(d, neg(this.dir))) continue; // no-op or reversal
+      const d = T.resolveTurn(this.view, this.turns.shift(), this.head, this.dir);
+      if (d === null || T.sameDir(d, this.dir) || T.isReverse(this.head, d, this.dir)) continue; // no-op or reversal
       this.dir = d;
       this.events.push({ type: 'turn' });
       break;
     }
 
-    const st = step(this.head, this.dir);
+    const st = T.step(this.head, this.dir);
     let next = st.p;
     let dir = st.d;
     let link = 'step';
     let view = this.view;
     if (st.crossed) {
-      view = {
-        n: st.to.slice(),
-        up: rotateFaceToFace(view.up, st.from, st.to, view.up),
-      };
+      view = T.crossView(view, st);
       link = 'edge';
     }
 
@@ -156,11 +141,11 @@ export class Game {
     let portalEvent = null;
     if (this.portals && this.portals.active) {
       const { a, b } = this.portals;
-      const target = eq(next, a) ? b : eq(next, b) ? a : null;
+      const target = this.topo.eq(next, a) ? b : this.topo.eq(next, b) ? a : null;
       if (target) {
         const exit = this.portalExit(next, target, dir, view);
         if (exit) {
-          portalEvent = { type: 'portal', from: next, to: target, fromFace: faceOf(next).id, toFace: faceOf(target).id };
+          portalEvent = { type: 'portal', from: next, to: target, fromFace: this.topo.faceOf(next), toFace: this.topo.faceOf(target) };
           view = exit.view;
           next = target;
           dir = exit.dir;
@@ -169,15 +154,15 @@ export class Game {
       }
     }
 
-    const eatIdx = this.crystals.findIndex((c) => eq(c, next));
+    const eatIdx = this.crystals.findIndex((c) => this.topo.eq(c, next));
     const willEat = eatIdx !== -1;
-    const willGhost = this.ghostCrystal && eq(next, this.ghostCrystal.p);
+    const willGhost = this.ghostCrystal && this.topo.eq(next, this.ghostCrystal.p);
     const growing = this.grow > 0 || willEat;
 
     // Self-collision (the tail vacates its cell this tick unless we grow).
     if (!this.ghost) {
       const body = this.occupied(!growing);
-      if (body.has(key(next))) {
+      if (body.has(this.topo.key(next))) {
         this.die(next);
         return;
       }
@@ -198,7 +183,7 @@ export class Game {
       this.links.pop();
     }
     if (portalEvent) this.events.push(portalEvent);
-    if (link === 'edge') this.events.push({ type: 'edge', toFace: faceOf(next).id });
+    if (link === 'edge') this.events.push({ type: 'edge', toFace: this.topo.faceOf(next) });
 
     if (willEat) {
       this.eaten++;
@@ -226,7 +211,7 @@ export class Game {
     // Recycle used portals once the snake has fully left both cells.
     if (this.portals && !this.portals.active) {
       const occ = this.occupied();
-      if (!occ.has(key(this.portals.a)) && !occ.has(key(this.portals.b))) this.placePortals();
+      if (!occ.has(this.topo.key(this.portals.a)) && !occ.has(this.topo.key(this.portals.b))) this.placePortals();
     }
   }
 
@@ -244,33 +229,26 @@ export class Game {
    * clearest direction. Returns null if every exit would be immediately fatal.
    */
   portalExit(entry, target, dir, curView = this.view) {
-    const nIn = normalOf(entry);
-    const nOut = normalOf(target);
     // Relative to the current view: rotate the camera basis the way the face rotates.
-    const hint = curView.up;
-    const view = {
-      n: nOut.slice(),
-      up: rotateFaceToFace(curView.up, nIn, nOut, hint),
-    };
-    const preferred = rotateFaceToFace(dir, nIn, nOut, hint);
+    const { view, dir: preferred } = this.topo.portalTransfer(entry, target, dir, curView);
     const body = this.occupied(true);
-    body.add(key(entry)); // nothing should be considered free behind us
+    body.add(this.topo.key(entry)); // nothing should be considered free behind us
     const run = (d) => {
       let p = target;
       let dd = d;
       let k = 0;
       for (; k < PORTAL_SAFE_RUN; k++) {
-        const s = step(p, dd);
-        if (body.has(key(s.p))) break;
+        const s = this.topo.step(p, dd);
+        if (body.has(this.topo.key(s.p))) break;
         p = s.p; dd = s.d;
       }
       return k;
     };
-    if (body.has(key(target))) return null;
+    if (body.has(this.topo.key(target))) return null;
     if (run(preferred) >= PORTAL_SAFE_RUN) return { dir: preferred, view };
     let best = null;
     let bestRun = 0;
-    for (const d of faceDirs(target)) {
+    for (const d of this.topo.dirs(target)) {
       const r = run(d);
       if (r > bestRun) { best = d; bestRun = r; }
     }
@@ -278,14 +256,14 @@ export class Game {
   }
 
   surfaceDistances(from, blocked) {
-    const dist = new Map([[key(from), 0]]);
+    const dist = new Map([[this.topo.key(from), 0]]);
     const q = [from];
     for (let qi = 0; qi < q.length; qi++) {
       const p = q[qi];
-      const d0 = dist.get(key(p));
-      for (const d of faceDirs(p)) {
-        const s = step(p, d);
-        const k = key(s.p);
+      const d0 = dist.get(this.topo.key(p));
+      for (const d of this.topo.dirs(p)) {
+        const s = this.topo.step(p, d);
+        const k = this.topo.key(s.p);
         if (dist.has(k) || blocked.has(k)) continue;
         dist.set(k, d0 + 1);
         q.push(s.p);
@@ -298,32 +276,32 @@ export class Game {
     const occ = this.occupied();
     const dist = this.surfaceDistances(this.head, occ);
     const reserved = new Set(occ);
-    for (const c of this.crystals) reserved.add(key(c));
-    if (this.ghostCrystal) reserved.add(key(this.ghostCrystal.p));
-    const headFace = this.headFace.id;
+    for (const c of this.crystals) reserved.add(this.topo.key(c));
+    if (this.ghostCrystal) reserved.add(this.topo.key(this.ghostCrystal.p));
+    const headFace = this.headFace;
     const ok = (p) => {
-      const k = key(p);
+      const k = this.topo.key(p);
       if (reserved.has(k)) return false;
       const d = dist.get(k);
       if (d === undefined || d < 5) return false; // reachable, but not right under the head
       // At least one direction must offer a clear run as an exit.
-      return faceDirs(p).some((dd) => {
+      return this.topo.dirs(p).some((dd) => {
         let q = p; let qd = dd;
         for (let s = 0; s < PORTAL_SAFE_RUN + 1; s++) {
-          const r = step(q, qd);
-          if (occ.has(key(r.p))) return false;
+          const r = this.topo.step(q, qd);
+          if (occ.has(this.topo.key(r.p))) return false;
           q = r.p; qd = r.d;
         }
         return true;
       });
     };
-    const candidates = allCells().filter(ok);
-    const onHeadFace = candidates.filter((p) => faceOf(p).id === headFace);
+    const candidates = this.topo.cells.filter(ok);
+    const onHeadFace = candidates.filter((p) => this.topo.faceOf(p) === headFace);
     const pick = (list) => list[Math.floor(this.rng() * list.length)];
     const a = pick(onHeadFace.length ? onHeadFace : candidates);
     if (!a) { this.portals = null; return; }
-    const fa = faceOf(a).id;
-    const others = candidates.filter((p) => faceOf(p).id !== fa);
+    const fa = this.topo.faceOf(a);
+    const others = candidates.filter((p) => this.topo.faceOf(p) !== fa);
     const b = pick(others);
     if (!b) { this.portals = null; return; }
     this.portals = { a, b, active: true };
@@ -339,22 +317,22 @@ export class Game {
   spawnCrystal() {
     const occ = this.occupied();
     const dist = this.surfaceDistances(this.head, occ);
-    const reserved = new Set(this.crystals.map(key));
-    if (this.ghostCrystal) reserved.add(key(this.ghostCrystal.p));
-    if (this.portals) { reserved.add(key(this.portals.a)); reserved.add(key(this.portals.b)); }
-    const perFace = [0, 0, 0, 0, 0, 0];
-    for (const c of this.crystals) perFace[faceOf(c).id]++;
+    const reserved = new Set(this.crystals.map((c) => this.topo.key(c)));
+    if (this.ghostCrystal) reserved.add(this.topo.key(this.ghostCrystal.p));
+    if (this.portals) { reserved.add(this.topo.key(this.portals.a)); reserved.add(this.topo.key(this.portals.b)); }
+    const perFace = new Array(this.topo.faceCount).fill(0);
+    for (const c of this.crystals) perFace[this.topo.faceOf(c)]++;
     const free = [];
-    for (const p of allCells()) {
-      const k = key(p);
+    for (const p of this.topo.cells) {
+      const k = this.topo.key(p);
       if (occ.has(k) || reserved.has(k)) continue;
       const d = dist.get(k);
       if (d === undefined || d < 2) continue;
       free.push(p);
     }
     if (!free.length) return null;
-    const least = Math.min(...free.map((p) => perFace[faceOf(p).id]));
-    const pool = free.filter((p) => perFace[faceOf(p).id] === least);
+    const least = Math.min(...free.map((p) => perFace[this.topo.faceOf(p)]));
+    const pool = free.filter((p) => perFace[this.topo.faceOf(p)] === least);
     return pool[Math.floor(this.rng() * pool.length)];
   }
 

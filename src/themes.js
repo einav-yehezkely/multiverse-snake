@@ -32,6 +32,37 @@ export const THEMES = [
     particles: { color: '#ffd89a', rise: 0.04, drift: 0.6, size: 0.1 },
     music: { root: 50, scale: [0, 1, 4, 5, 7, 8, 10], prog: [0, 1, 6, 0], wave: 'triangle' }, // D hijaz
   },
+  // ---- extra worlds used by the dodecahedron (faces 6–11) ----
+  { // 6
+    name: 'Coral Reef', color: '#2ee6d6', accent: '#ff7a8a', base: ['#022a3a', '#05485a'],
+    particles: { color: '#bff8ff', rise: 0.45, drift: 0.15, size: 0.12 },
+    music: { root: 55, scale: [0, 2, 4, 7, 9, 12, 14], prog: [0, 3, 4, 0], wave: 'sine' }, // G major pentatonic
+  },
+  { // 7
+    name: 'Amethyst Caverns', color: '#d36bff', accent: '#ffd1ff', base: ['#14051f', '#2a0a3d'],
+    particles: { color: '#f0b8ff', rise: 0.1, drift: 0.1, size: 0.13 },
+    music: { root: 49, scale: [0, 2, 3, 5, 7, 8, 10], prog: [0, 5, 6, 4], wave: 'triangle' }, // C# minor
+  },
+  { // 8
+    name: 'Storm Plains', color: '#9fb4ff', accent: '#fff36b', base: ['#0d1320', '#1e2a40'],
+    particles: { color: '#cfdcff', rise: -0.6, drift: 0.5, size: 0.09 },
+    music: { root: 53, scale: [0, 2, 3, 5, 7, 8, 11], prog: [0, 4, 5, 4], wave: 'sawtooth' }, // F harmonic minor
+  },
+  { // 9
+    name: 'Sakura Garden', color: '#ff8fc4', accent: '#ffe3f0', base: ['#2a0b1c', '#3d1430'],
+    particles: { color: '#ffc4df', rise: -0.2, drift: 0.4, size: 0.14 },
+    music: { root: 56, scale: [0, 1, 5, 7, 8, 12, 13], prog: [0, 3, 0, 4], wave: 'triangle' }, // Ab in-sen
+  },
+  { // 10
+    name: 'Toxic Bog', color: '#b6ff2e', accent: '#2eff9a', base: ['#0b1a04', '#1d2e08'],
+    particles: { color: '#d9ff6b', rise: 0.3, drift: 0.08, size: 0.15 },
+    music: { root: 47, scale: [0, 1, 3, 5, 6, 8, 10], prog: [0, 1, 4, 1], wave: 'square' }, // B locrian
+  },
+  { // 11
+    name: 'Clockwork Forge', color: '#ffb84d', accent: '#ffe6a8', base: ['#1c1206', '#33210a'],
+    particles: { color: '#ffd38a', rise: 0.5, drift: 0.05, size: 0.1 },
+    music: { root: 48, scale: [0, 2, 4, 5, 7, 9, 11], prog: [0, 4, 5, 3], wave: 'square' }, // C major
+  },
 ];
 
 function mulberry(seed) {
@@ -43,8 +74,8 @@ function mulberry(seed) {
   };
 }
 
-/** Draw a face texture onto a canvas. `cells` is the grid size. */
-export function paintFace(ctx, id, size, cells) {
+/** Draw a world's artwork (no grid) filling a size×size canvas. */
+export function paintArt(ctx, id, size) {
   const t = THEMES[id];
   const r = mulberry(1000 + id * 77);
   const g = ctx.createLinearGradient(0, 0, size, size);
@@ -184,8 +215,114 @@ export function paintFace(ctx, id, size, cells) {
       }
       break;
     }
+    case 6: { // Coral reef – caustics, coral fans and bubbles
+      ctx.strokeStyle = 'rgba(160,255,250,0.12)';
+      ctx.lineWidth = 2;
+      for (let k = 0; k < 40; k++) {
+        ctx.beginPath();
+        const x = r() * size, y = r() * size;
+        ctx.moveTo(x, y);
+        ctx.bezierCurveTo(x + 40, y - 30, x + 60, y + 30, x + 110, y + (r() - 0.5) * 40);
+        ctx.stroke();
+      }
+      for (let k = 0; k < 26; k++) {
+        const x = r() * size, y = r() * size, rad = 14 + r() * 34;
+        ctx.fillStyle = r() < 0.5 ? 'rgba(255,110,130,0.45)' : 'rgba(255,170,90,0.4)';
+        for (let b = 0; b < 7; b++) {
+          ctx.beginPath();
+          ctx.arc(x + Math.cos(b) * rad * 0.6, y + Math.sin(b * 1.7) * rad * 0.6, rad * (0.25 + r() * 0.3), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.strokeStyle = 'rgba(220,255,255,0.45)';
+      ctx.lineWidth = 1.5;
+      for (let k = 0; k < 60; k++) { ctx.beginPath(); ctx.arc(r() * size, r() * size, 2 + r() * 6, 0, Math.PI * 2); ctx.stroke(); }
+      break;
+    }
+    case 7: { // Amethyst caverns – crystal shards
+      for (let k = 0; k < 70; k++) {
+        const x = r() * size, y = r() * size, h = 30 + r() * 80, w = 8 + r() * 18, a = r() * Math.PI * 2;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a);
+        const gr = ctx.createLinearGradient(0, -h, 0, 0);
+        gr.addColorStop(0, 'rgba(255,200,255,0.75)'); gr.addColorStop(1, 'rgba(120,30,180,0.2)');
+        ctx.fillStyle = gr;
+        ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(w, 0); ctx.lineTo(-w, 0); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      }
+      break;
+    }
+    case 8: { // Storm plains – clouds and lightning
+      for (let k = 0; k < 18; k++) {
+        const x = r() * size, y = r() * size, rad = 60 + r() * 120;
+        const gr = ctx.createRadialGradient(x, y, 0, x, y, rad);
+        gr.addColorStop(0, 'rgba(150,170,210,0.25)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gr; ctx.fillRect(0, 0, size, size);
+      }
+      ctx.strokeStyle = 'rgba(255,245,140,0.85)';
+      ctx.shadowColor = '#fff36b'; ctx.shadowBlur = 14; ctx.lineWidth = 3;
+      for (let k = 0; k < 6; k++) {
+        let x = r() * size, y = r() * size * 0.3;
+        ctx.beginPath(); ctx.moveTo(x, y);
+        for (let q = 0; q < 7; q++) { x += (r() - 0.5) * 60; y += 30 + r() * 30; ctx.lineTo(x, y); }
+        ctx.stroke();
+      }
+      break;
+    }
+    case 9: { // Sakura garden – petals and branches
+      ctx.strokeStyle = 'rgba(60,20,30,0.7)'; ctx.lineWidth = 6;
+      for (let k = 0; k < 5; k++) {
+        ctx.beginPath(); let x = r() * size, y = r() * size; ctx.moveTo(x, y);
+        for (let q = 0; q < 6; q++) { x += (r() - 0.3) * 70; y += (r() - 0.5) * 70; ctx.lineTo(x, y); }
+        ctx.stroke();
+      }
+      for (let k = 0; k < 160; k++) {
+        ctx.save(); ctx.translate(r() * size, r() * size); ctx.rotate(r() * 6.28);
+        ctx.fillStyle = `rgba(255,${150 + r() * 70},${190 + r() * 50},${0.4 + r() * 0.5})`;
+        for (let q = 0; q < 5; q++) { ctx.rotate(1.2566); ctx.beginPath(); ctx.ellipse(0, -6, 3.5, 6, 0, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+      break;
+    }
+    case 10: { // Toxic bog – murky pools and bubbles
+      for (let k = 0; k < 30; k++) {
+        const x = r() * size, y = r() * size, rad = 20 + r() * 70;
+        const gr = ctx.createRadialGradient(x, y, 0, x, y, rad);
+        gr.addColorStop(0, 'rgba(180,255,40,0.35)'); gr.addColorStop(1, 'rgba(20,40,0,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, rad, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(200,255,110,0.6)'; ctx.lineWidth = 2;
+      for (let k = 0; k < 70; k++) { ctx.beginPath(); ctx.arc(r() * size, r() * size, 3 + r() * 10, 0, Math.PI * 2); ctx.stroke(); }
+      break;
+    }
+    case 11: { // Clockwork forge – gears and circuit traces
+      ctx.strokeStyle = 'rgba(255,190,90,0.35)'; ctx.lineWidth = 3;
+      for (let k = 0; k < 14; k++) {
+        ctx.beginPath(); let x = r() * size, y = r() * size; ctx.moveTo(x, y);
+        for (let q = 0; q < 4; q++) { if (q % 2) x += (r() - 0.5) * 200; else y += (r() - 0.5) * 200; ctx.lineTo(x, y); }
+        ctx.stroke();
+      }
+      for (let k = 0; k < 12; k++) {
+        const x = r() * size, y = r() * size, rad = 25 + r() * 50, teeth = 8 + Math.floor(r() * 8);
+        ctx.fillStyle = `rgba(${150 + r() * 80},${100 + r() * 50},40,0.55)`;
+        ctx.beginPath();
+        for (let q = 0; q < teeth * 2; q++) {
+          const a = (q / (teeth * 2)) * Math.PI * 2, rr = q % 2 ? rad : rad * 1.18;
+          ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(20,12,4,0.9)';
+        ctx.beginPath(); ctx.arc(x, y, rad * 0.35, 0, Math.PI * 2); ctx.fill();
+      }
+      break;
+    }
   }
   ctx.restore();
+}
+
+/** Cube face texture: world artwork plus the square grid and border. */
+export function paintFace(ctx, id, size, cells) {
+  const t = THEMES[id];
+  paintArt(ctx, id, size);
 
   // Grid
   const c = size / cells;
