@@ -29,6 +29,8 @@ jobs:
           mkdir _site
           cp -r index.html css src vendor _site/
           touch _site/.nojekyll
+      - name: Cache-bust asset URLs
+        run: node scripts/stamp.mjs _site "${GITHUB_SHA::7}"
       - name: Check asset paths
         run: node scripts/check-site.mjs _site
       - uses: actions/configure-pages@v5

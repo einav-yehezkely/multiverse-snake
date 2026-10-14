@@ -100,7 +100,7 @@ The tests cover:
 
 ## Deployment
 
-On every push to `main`, `.github/workflows/deploy.yml` runs the tests, assembles `_site/`, checks the asset paths and deploys to GitHub Pages.
+On every push to `main`, `.github/workflows/deploy.yml` runs the tests, assembles `_site/`, adds the commit hash as `?v=` to the stylesheet and every module import (`scripts/stamp.mjs`), checks the asset paths and deploys to GitHub Pages. GitHub Pages tells browsers to cache every file for 10 minutes, so without the hash a browser could mix a new page with old cached CSS or JS.
 
 ## Known limitations
 
